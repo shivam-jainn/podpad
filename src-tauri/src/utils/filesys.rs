@@ -82,6 +82,32 @@ pub fn rename_node(workspace: &str, old_path: &str, new_path: &str) -> String {
     }
 }
 
+#[tauri::command]
+pub fn list_nodes(workspace: &str) -> String {
+    let folder_path = workspace; // Corrected folder_path assignment
+    let result = std::fs::read_dir(&folder_path);
+
+    match result {
+        Ok(entries) => {
+            let mut nodes = Vec::new();
+            for entry in entries {
+                if let Ok(entry) = entry {
+                    let node_type = if entry.file_type().map(|f| f.is_dir()).unwrap_or(false) {
+                        "folder"
+                    } else {
+                        "file"
+                    };
+                    let node_name = entry.file_name().into_string().unwrap_or_default();
+                    nodes.push(json!({"type": node_type, "name": node_name}));
+                }
+            }
+            json!({"success": true, "nodes": nodes}).to_string()
+        }
+        Err(e) => json!({"success": false, "error": e.to_string()}).to_string(),
+    }
+}
+
+
 #[cfg(test)]
 mod test {
     use super::*;
@@ -163,5 +189,13 @@ mod test {
         let content = String::from_utf8(result.unwrap()).expect("Failed to convert to string");
         assert_eq!(content, "hello world", "File content mismatch");
     }
-      
+    
+    #[test]
+    fn test_list_nodes() {
+        let workspace = "test_data/file_list_folder";
+        let result = list_nodes(workspace);
+        assert!(result.contains(r#""type":"file","name":"NewFiles.py""#), "NewFiles.py not found");
+        assert!(result.contains(r#""type":"file","name":"NewFiles.txt""#), "NewFiles.txt not found");
+    }
+    
 }
