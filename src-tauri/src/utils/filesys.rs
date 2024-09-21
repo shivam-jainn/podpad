@@ -48,6 +48,39 @@ pub fn delete_node(workspace: &str, path: &str) -> String {
     }
 }
 
+#[tauri::command]
+pub fn access_file(workspace: &str, path: &str) -> Result<Vec<u8>, String> {
+    let file_path = format!("{}/{}", workspace, path);
+    let result = File::open(&file_path);
+
+    match result {
+        Ok(mut file) => {
+            let mut buffer = Vec::new();
+            if let Err(e) = std::io::Read::read_to_end(&mut file, &mut buffer) {
+                return Err(json!({"success": false, "error": e.to_string()}).to_string());
+            }
+            Ok(buffer)
+        }
+        Err(e) => Err(json!({"success": false, "error": e.to_string()}).to_string()),
+    }
+}
+
+#[tauri::command]
+pub fn rename_node(workspace: &str, old_path: &str, new_path: &str) -> String {
+    let old_node_path = format!("{}/{}", workspace, old_path);
+    let new_node_path = format!("{}/{}", workspace, new_path);
+
+    let result = if std::fs::metadata(&old_node_path).map(|m| m.is_dir()).unwrap_or(false) {
+        std::fs::rename(&old_node_path, &new_node_path)
+    } else {
+        std::fs::rename(&old_node_path, &new_node_path)
+    };
+
+    match result {
+        Ok(_) => json!({"success": true}).to_string(),
+        Err(e) => json!({"success": false, "error": e.to_string()}).to_string(),
+    }
+}
 
 #[cfg(test)]
 mod test {
@@ -89,20 +122,46 @@ mod test {
         let result = add_file(workspace, subfile_path);
         assert_eq!(result, r#"{"success":false,"error":"File already exists"}"#, "File in subfolder already exists check failed");
 
-        // Step 8: Delete the file in the subfolder
+        // Step 8: Rename the file in the subfolder
+        let new_subfile_path = "test_workspace/test_subfolder/test_subfile_renamed.txt";
+        let result = rename_node(workspace, subfile_path, new_subfile_path);
+        assert_eq!(result, r#"{"success":true}"#, "Failed to rename file in subfolder");
+
+        // Step 9: Rename the subfolder
+        let new_subfolder_path = "test_workspace/test_subfolder_renamed";
+        let result = rename_node(workspace, subfolder_path, new_subfolder_path);
+        assert_eq!(result, r#"{"success":true}"#, "Failed to rename subfolder");
+        
+        // Step 10: Delete the file in the subfolder
+        let subfile_path = "test_workspace/test_subfolder_renamed/test_subfile_renamed.txt";
         let result = delete_node(workspace, subfile_path);
         assert_eq!(result, r#"{"success":true}"#, "Failed to delete file in subfolder");
 
-        // Step 9: Delete the subfolder
+        // Step 11: Delete the subfolder
+        let subfolder_path = "test_workspace/test_subfolder_renamed";
         let result = delete_node(workspace, subfolder_path);
         assert_eq!(result, r#"{"success":true}"#, "Failed to delete subfolder");
 
-        // Step 10: Delete the file in the main folder
+        // Step 12: Delete the file in the main folder
         let result = delete_node(workspace, file_path);
         assert_eq!(result, r#"{"success":true}"#, "Failed to delete file in main folder");
 
-        // Step 11: Delete the main folder
+        // Step 13: Delete the main folder
         let result = delete_node(workspace, folder_path);
         assert_eq!(result, r#"{"success":true}"#, "Failed to delete main folder");
     }
+
+    #[test]
+    fn test_file_access() {
+        let workspace = ".";
+        let file_path = "test_data/Hello.txt";
+    
+        let result = access_file(workspace, file_path);
+        assert!(result.is_ok(), "Failed to access file");
+    
+        // Convert the Vec<u8> to a string before comparison
+        let content = String::from_utf8(result.unwrap()).expect("Failed to convert to string");
+        assert_eq!(content, "hello world", "File content mismatch");
+    }
+      
 }
